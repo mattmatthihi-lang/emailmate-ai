@@ -62,8 +62,8 @@ export default function App() {
       : `You are EmailMate AI. Proofread and improve the following text for grammar, clarity, and impact: ${input}. Plain text only.`;
 
     try {
-      // Using the latest supported Gemini Flash model
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      // Switched to gemini-2.0-flash for better compatibility and stability
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
