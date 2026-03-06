@@ -40,6 +40,32 @@ export default function App() {
     { name: 'Casual', emoji: '✌️' }
   ];
 
+  // Helper function for exponential backoff retries
+  const fetchWithRetry = async (url, options, maxRetries = 5) => {
+    let lastError;
+    
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const response = await fetch(url, options);
+        const data = await response.json();
+
+        // If we hit a rate limit (429), wait and retry
+        if (response.status === 429) {
+          const waitTime = Math.pow(2, i) * 1000; // 1s, 2s, 4s, 8s, 16s
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          continue; 
+        }
+
+        return { response, data };
+      } catch (err) {
+        lastError = err;
+        const waitTime = Math.pow(2, i) * 1000;
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+    throw lastError || new Error("Max retries reached");
+  };
+
   const handleAction = async (mode) => {
     const apiKey = getApiKey();
     const input = mode === 'write' ? promptInput : proofreadInput;
@@ -62,21 +88,25 @@ export default function App() {
       : `You are EmailMate AI. Proofread and improve the following text for grammar, clarity, and impact: ${input}. Plain text only.`;
 
     try {
-      // Switched to gemini-2.0-flash for better compatibility and stability
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: systemPrompt }] }]
-        })
-      });
-
-      const data = await response.json();
+      const { response, data } = await fetchWithRetry(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: systemPrompt }] }]
+          })
+        }
+      );
 
       // 2. Handle Google API Specific Errors
       if (!response.ok) {
         const msg = data.error?.message || response.statusText;
-        setErrorDetails(`Google API Error (${response.status}): ${msg}`);
+        if (response.status === 429) {
+          setErrorDetails("Rate Limit Exceeded: You've sent too many requests. Please wait a minute and try again.");
+        } else {
+          setErrorDetails(`Google API Error (${response.status}): ${msg}`);
+        }
         setLoading(false);
         return;
       }
@@ -97,7 +127,7 @@ export default function App() {
         text 
       }, ...history]);
     } catch (err) {
-      setErrorDetails(`Connection Error: ${err.message}. This might be a temporary network issue.`);
+      setErrorDetails(`Connection Error: ${err.message}. This might be a temporary network issue or your quota has been fully exhausted.`);
     } finally {
       setLoading(false);
     }
@@ -266,7 +296,7 @@ export default function App() {
         </div>
       </div>
       <p className="mt-8 text-slate-400 text-[10px] tracking-widest uppercase text-center">
-        EmailMate AI v2.6 • Google Gemini API Integration
+        EmailMate AI v2.7 • Google Gemini API Integration
       </p>
     </div>
   );
